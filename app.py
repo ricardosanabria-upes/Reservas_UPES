@@ -348,7 +348,7 @@ with cl:
     st.markdown("<div style='font-size:2.8rem;padding-top:0.3rem'>🏫</div>", unsafe_allow_html=True)
 with ch:
     st.markdown("<h1 class='titulo'>Disponibilidad de Instalaciones</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='sub'>Consulta en tiempo real la disponibilidad de aulas y espacios.</p>", unsafe_allow_html=True)
+    st.markdown("<p class='sub'>Consulta la disponibilidad de aulas y espacios.</p>", unsafe_allow_html=True)
 
 # Leyenda
 st.markdown("""
