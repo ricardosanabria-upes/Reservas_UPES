@@ -293,17 +293,18 @@ def generar_svg_calendario(instalacion, fecha, bloques, reservas):
     for reserva in reservas:
         h_ini = reserva["h_ini"]
         h_fin = reserva["h_fin"]
-        ini_min_r = h_ini.hour * 60 + h_ini.minute
+        ini_min = h_ini.hour * 60 + h_ini.minute
         fin_min_r = h_fin.hour * 60 + h_fin.minute
         
-        y_inicio = y_base + ((ini_min_r - inicio_min) / 60) * 25
-        altura = ((fin_min_r - ini_min_r) / 60) * 25
+        y_inicio = y_base + ((ini_min - inicio_min) / 60) * 25
+        altura = ((fin_min_r - ini_min) / 60) * 25
         
         svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="#fffde7" stroke="#fdd835" stroke-width="2" rx="4"/>')
-        svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: #f57f17;">🟡 Reserva</text>')
+        svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: #f57f17;">🟡 {reserva["detalle"][:30]}</text>')
         svg_lines.append(f'<text x="60" y="{y_inicio + altura - 5}" class="bloque-sub" style="fill: #f57f17;">{reserva["hora"]}</text>')
     
     # Disponibles (verde)
+    # Calcular espacios libres
     eventos = sorted(
         [(b["h_ini"], b["h_fin"]) for b in bloques if b["tipo"] == "clase"] +
         [(r["h_ini"], r["h_fin"]) for r in reservas],
