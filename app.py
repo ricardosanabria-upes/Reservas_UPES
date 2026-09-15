@@ -1,29 +1,22 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
-import pytz
 
 # ============================================================================
 # CONFIGURACIÓN STREAMLIT
 # ============================================================================
 st.set_page_config(page_title="Disponibilidad Espacios UPES", layout="wide", initial_sidebar_state="collapsed")
 
+st.markdown("""
+<style>
+    .titulo { font-size: 2rem; font-weight: 700; color: #1e1b4b; margin-bottom: 0; }
+</style>
+""", unsafe_allow_html=True)
+
 # ============================================================================
 # CONSTANTES
 # ============================================================================
-ESPACIOS_SIN_CLASES = {"SUM", "Sala de juntas", "Pasillos", "Biblioteca"}
-CICLO_FRANJAS = [
-    ("06:00", "07:40"),
-    ("08:00", "09:40"),
-    ("10:00", "11:40"),
-    ("13:10", "14:50"),
-    ("16:50", "18:30"),
-    ("18:30", "20:10"),
-]
-
-
+ESPACIOS_ADICIONALES = {"SUM", "Sala de juntas", "Pasillos", "Biblioteca"}
 
 # ============================================================================
 # FUNCIONES DE DATOS
@@ -31,18 +24,17 @@ CICLO_FRANJAS = [
 
 @st.cache_data
 def cargar_horario_ciclo():
-    """Carga Excel de horario desde GitHub y lo pivotea a formato largo"""
+    """Carga Excel de horario desde GitHub"""
     try:
         url = "https://raw.githubusercontent.com/ricardosanabria-upes/Consulta_Disponibilidad_UPES/main/DETALLE%20AULAS%20CICLO%20ACTUAL.xlsx"
         df_raw = pd.read_excel(url)
         
         # Pivotear: columnas de aulas → filas
-        # ID vars: Dia, Hora. Variable name: Aula. Value name: Curso
         aulas = [col for col in df_raw.columns if col not in ['Dia', 'Hora']]
         df = pd.melt(df_raw, id_vars=['Dia', 'Hora'], value_vars=aulas, 
                      var_name='Aula', value_name='Curso')
         
-        # Filtrar filas vacías (NaN)
+        # Filtrar filas vacías
         df = df.dropna(subset=['Curso'])
         df['Curso'] = df['Curso'].astype(str).str.strip()
         
@@ -60,7 +52,6 @@ def cargar_horario_ciclo():
             lambda x: pd.Series(parse_horas(x))
         )
         df = df.dropna(subset=['Hora Inicio', 'Hora Fin'])
-        df['Ocupada'] = True
         
         return df
     except Exception as e:
@@ -69,27 +60,41 @@ def cargar_horario_ciclo():
 
 @st.cache_data
 def cargar_reservas():
-    """Carga reservas desde Google Sheets público"""
+    """Carga reservas desde Google Sheets como CSV"""
     try:
+        # Leer SHEETS_URL de secrets
         SHEETS_URL = st.secrets.get("SHEETS_URL", "")
+        
         if not SHEETS_URL:
             return pd.DataFrame()
         
-        # Convertir URL de Google Sheets a CSV export
-        # Extrae el ID y el GID (sheet id)
-        if '/d/' in SHEETS_URL and '/edit' in SHEETS_URL:
-            sheet_id = SHEETS_URL.split('/d/')[1].split('/edit')[0]
-            gid = "0"  # Primera hoja por defecto
-            if '#gid=' in SHEETS_URL:
-                gid = SHEETS_URL.split('#gid=')[1]
-            
-            csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-            df = pd.read_csv(csv_url)
-            return df
-        else:
+        # Extraer sheet_id y gid de la URL
+        if '/d/' not in SHEETS_URL:
             return pd.DataFrame()
+        
+        sheet_id = SHEETS_URL.split('/d/')[1].split('/')[0]
+        
+        # Detectar gid (sheet id) - por defecto 0
+        gid = "0"
+        if '#gid=' in SHEETS_URL:
+            gid = SHEETS_URL.split('#gid=')[1].split('&')[0]
+        
+        # URL de exportación CSV
+        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+        
+        df = pd.read_csv(csv_url)
+        
+        # Asegurar que columnas existan
+        if 'Aula' not in df.columns:
+            df['Aula'] = ""
+        if 'Hora Inicio' not in df.columns:
+            df['Hora Inicio'] = ""
+        if 'Hora Fin' not in df.columns:
+            df['Hora Fin'] = ""
+        
+        return df
     except Exception as e:
-        st.warning(f"No se pudieron cargar reservas: {e}")
+        st.warning(f"No se pudieron cargar reservas: {str(e)[:50]}")
         return pd.DataFrame()
 
 # ============================================================================
@@ -97,49 +102,27 @@ def cargar_reservas():
 # ============================================================================
 
 def tiempo_a_minutos(hora_str):
-    """Convierte HH:MM a minutos desde 00:00"""
+    """Convierte HH:MM a minutos"""
     try:
-        h, m = map(int, hora_str.split(":"))
+        h, m = map(int, str(hora_str).split(":"))
         return h * 60 + m
     except:
         return 0
 
 def minutos_a_tiempo(minutos):
     """Convierte minutos a HH:MM"""
-    h = minutos // 60
-    m = minutos % 60
+    h = int(minutos) // 60
+    m = int(minutos) % 60
     return f"{h:02d}:{m:02d}"
 
-def tiene_clases(instalacion, df_horario):
-    """Detecta si una instalación tiene clases registradas"""
-    if df_horario is None or df_horario.empty:
-        return False
-    df_inst = df_horario[
-        (df_horario["Aula"].str.strip() == instalacion.strip()) &
-        (df_horario["Ocupada"] == True)
-    ]
-    return len(df_inst) > 0
-
 def obtener_bloques_dia(instalacion, df_horario, df_reservas):
-    """
-    Obtiene bloques de clases y reservas para una instalación.
-    Retorna: {
-        'clases': [(inicio_min, fin_min, curso), ...],
-        'reservas': [(inicio_min, fin_min, responsable, motivo), ...],
-        'traslapes': [(inicio_min, fin_min, duracion_min), ...]
-    }
-    """
-    bloques = {
-        'clases': [],
-        'reservas': [],
-        'traslapes': []
-    }
+    """Obtiene clases, reservas y traslapes"""
+    bloques = {'clases': [], 'reservas': [], 'traslapes': []}
     
-    # Filtrar clases para esta instalación
+    # Clases
     if df_horario is not None and not df_horario.empty:
         df_inst = df_horario[
-            (df_horario["Aula"].str.strip() == instalacion.strip()) &
-            (df_horario["Ocupada"] == True)
+            (df_horario["Aula"].str.strip() == instalacion.strip())
         ]
         for _, row in df_inst.iterrows():
             try:
@@ -150,26 +133,25 @@ def obtener_bloques_dia(instalacion, df_horario, df_reservas):
             except:
                 pass
     
-    # Filtrar reservas para esta instalación
+    # Reservas
     if df_reservas is not None and not df_reservas.empty:
         df_res = df_reservas[
-            (df_reservas.get("Aula", "").str.strip() == instalacion.strip())
+            (df_reservas.get("Aula", "").astype(str).str.strip() == instalacion.strip())
         ]
         for _, row in df_res.iterrows():
             try:
                 inicio_min = tiempo_a_minutos(str(row.get("Hora Inicio", "00:00")))
                 fin_min = tiempo_a_minutos(str(row.get("Hora Fin", "00:00")))
-                responsable = row.get("Responsable", "")
-                motivo = row.get("Motivo", "")
+                responsable = str(row.get("Responsable", ""))
+                motivo = str(row.get("Motivo", ""))
                 bloques['reservas'].append((inicio_min, fin_min, responsable, motivo))
             except:
                 pass
     
-    # Detectar traslapes (reservas que se superponen con clases)
+    # Traslapes
     traslapes_detectados = []
     for r_inicio, r_fin, _, _ in bloques['reservas']:
         for c_inicio, c_fin, _ in bloques['clases']:
-            # ¿Se solapan?
             overlap_inicio = max(r_inicio, c_inicio)
             overlap_fin = min(r_fin, c_fin)
             if overlap_inicio < overlap_fin:
@@ -180,11 +162,7 @@ def obtener_bloques_dia(instalacion, df_horario, df_reservas):
     return bloques
 
 def calcular_disponibles(inicio_dia, fin_dia, clases, reservas):
-    """
-    Calcula bloques disponibles entre clases y reservas.
-    Retorna lista de (inicio_min, fin_min)
-    """
-    # Ordenar todos los eventos
+    """Calcula bloques disponibles"""
     eventos = sorted(
         [(c[0], c[1], 'clase') for c in clases] +
         [(r[0], r[1], 'reserva') for r in reservas],
@@ -209,14 +187,11 @@ def calcular_disponibles(inicio_dia, fin_dia, clases, reservas):
 # ============================================================================
 
 def generar_svg_calendario(instalacion, fecha, bloques, disponibles):
-    """
-    Genera SVG del calendario vertical (Google Calendar style).
-    1 hora = 25px de altura
-    """
-    inicio_dia = tiempo_a_minutos("06:00")  # 6 AM
-    fin_dia = tiempo_a_minutos("20:10")     # 8:10 PM
+    """Genera SVG calendario vertical"""
+    inicio_dia = tiempo_a_minutos("06:00")
+    fin_dia = tiempo_a_minutos("20:10")
     
-    altura_total = (fin_dia - inicio_dia) / 60 * 25  # px por hora * horas
+    altura_total = (fin_dia - inicio_dia) / 60 * 25
     ancho = 600
     
     svg_lines = []
@@ -225,7 +200,6 @@ def generar_svg_calendario(instalacion, fecha, bloques, disponibles):
     svg_lines.append(f'.time-label {{ font-size: 11px; fill: #666; text-anchor: end; }}')
     svg_lines.append(f'.bloque-text {{ font-size: 11px; font-weight: bold; }}')
     svg_lines.append(f'.bloque-sub {{ font-size: 9px; }}')
-    svg_lines.append(f'a {{ cursor: pointer; }}')
     svg_lines.append(f'</style>')
     
     # Título
@@ -240,11 +214,10 @@ def generar_svg_calendario(instalacion, fecha, bloques, disponibles):
         svg_lines.append(f'<text x="35" y="{y_pos + 4}" class="time-label">{hora:02d}:00</text>')
         svg_lines.append(f'<line x1="40" y1="{y_pos}" x2="{ancho + 40}" y2="{y_pos}" stroke="#e5e5e5" stroke-width="0.5"/>')
     
-    # Línea final
     y_fin = y_base + altura_total
     svg_lines.append(f'<line x1="40" y1="{y_fin}" x2="{ancho + 40}" y2="{y_fin}" stroke="#999" stroke-width="1"/>')
     
-    # Dibujar clases
+    # Clases (rojo)
     for c_inicio, c_fin, curso in bloques['clases']:
         y_inicio = y_base + ((c_inicio - inicio_dia) / 60) * 25
         altura = ((c_fin - c_inicio) / 60) * 25
@@ -252,7 +225,7 @@ def generar_svg_calendario(instalacion, fecha, bloques, disponibles):
         svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: #c62828;">🔴 {curso[:25]}</text>')
         svg_lines.append(f'<text x="60" y="{y_inicio + altura - 5}" class="bloque-sub" style="fill: #c62828;">{minutos_a_tiempo(c_inicio)}–{minutos_a_tiempo(c_fin)}</text>')
     
-    # Dibujar reservas
+    # Reservas (amarillo)
     for r_inicio, r_fin, responsable, motivo in bloques['reservas']:
         y_inicio = y_base + ((r_inicio - inicio_dia) / 60) * 25
         altura = ((r_fin - r_inicio) / 60) * 25
@@ -260,25 +233,22 @@ def generar_svg_calendario(instalacion, fecha, bloques, disponibles):
         svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: #f57f17;">🟡 {responsable[:25]}</text>')
         svg_lines.append(f'<text x="60" y="{y_inicio + altura - 5}" class="bloque-sub" style="fill: #f57f17;">{minutos_a_tiempo(r_inicio)}–{minutos_a_tiempo(r_fin)}</text>')
     
-    # Dibujar traslapes
+    # Traslapes
     for t_inicio, t_fin, _ in bloques['traslapes']:
         y_inicio = y_base + ((t_inicio - inicio_dia) / 60) * 25
         altura = ((t_fin - t_inicio) / 60) * 25
         svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="#ffcccc" stroke="#e53935" stroke-width="3" rx="4"/>')
         svg_lines.append(f'<text x="60" y="{y_inicio + altura/2}" class="bloque-text" style="fill: #c62828;">⚠ TRASLAPE</text>')
     
-    # Dibujar disponibles - MEJORADO
+    # Disponibles (verde)
     for disp_inicio, disp_fin in disponibles:
         y_inicio = y_base + ((disp_inicio - inicio_dia) / 60) * 25
         altura = ((disp_fin - disp_inicio) / 60) * 25
         duracion_min = disp_fin - disp_inicio
         duracion_str = f"{duracion_min // 60}h {duracion_min % 60}m" if duracion_min >= 60 else f"{duracion_min}m"
         
-        # Fondo más visible
         svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="#e8f5e9" stroke="#66bb6a" stroke-width="2" rx="4"/>')
-        # Texto principal más grande y visible
         svg_lines.append(f'<text x="60" y="{y_inicio + 16}" class="bloque-text" style="fill: #2e7d32; font-size: 12px;">✅ Disponible</text>')
-        # Duración en línea separada
         svg_lines.append(f'<text x="60" y="{y_inicio + altura - 5}" class="bloque-sub" style="fill: #2e7d32; font-weight: bold;">{duracion_str}</text>')
     
     svg_lines.append(f'</svg>')
@@ -298,49 +268,34 @@ if df_horario is None or df_horario.empty:
     st.error("No se pudo cargar el horario del ciclo")
     st.stop()
 
-# Obtener lista de instalaciones únicas
-instalaciones = sorted(set(df_horario["Aula"].unique()))
+# Instalaciones
+instalaciones = sorted(set(df_horario["Aula"].unique()) | ESPACIOS_ADICIONALES)
 
-# Agregar espacios sin clases
-ESPACIOS_ADICIONALES = {"SUM", "Sala de juntas", "Pasillos", "Biblioteca"}
-instalaciones = sorted(set(instalaciones) | ESPACIOS_ADICIONALES)
-
-# Sidebar: Filtros
+# Sidebar
 st.sidebar.title("Filtros")
-
-# Selector de fecha
 fecha_sel = st.sidebar.date_input("Seleccionar fecha", datetime.now())
-
-# Selector de instalación
 instalacion_sel = st.sidebar.selectbox("Seleccionar instalación", instalaciones, index=0)
 
-# Obtener bloques (sin fecha, solo del horario del ciclo)
+# Bloques
 bloques = obtener_bloques_dia(instalacion_sel, df_horario, df_reservas)
-clases = bloques['clases']
-reservas = bloques['reservas']
-traslapes = bloques['traslapes']
-
-# Calcular disponibles
 inicio_dia = tiempo_a_minutos("06:00")
 fin_dia = tiempo_a_minutos("20:10")
-disponibles = calcular_disponibles(inicio_dia, fin_dia, clases, reservas)
+disponibles = calcular_disponibles(inicio_dia, fin_dia, bloques['clases'], bloques['reservas'])
 
-# Métricas en header
+# Métricas
 col1, col2, col3, col4 = st.columns(4)
+col1.metric("✅ Bloques libres", len(disponibles))
+col2.metric("🔴 Clases", len(bloques['clases']))
+col3.metric("🟡 Reservas", len(bloques['reservas']))
 
-libres = len(disponibles)
-col1.metric("✅ Bloques libres", libres)
-col2.metric("🔴 Clases", len(clases))
-col3.metric("🟡 Reservas", len(reservas))
-
-duracion_total_traslapes = sum(t[2] for t in traslapes)
-if traslapes:
-    duracion_str = f"{duracion_total_traslapes // 60}h {duracion_total_traslapes % 60}m" if duracion_total_traslapes >= 60 else f"{duracion_total_traslapes}m"
-    col4.metric("⚠ Traslape", f"{len(traslapes)} - {duracion_str}")
+duracion_total = sum(t[2] for t in bloques['traslapes'])
+if bloques['traslapes']:
+    duracion_str = f"{duracion_total // 60}h {duracion_total % 60}m" if duracion_total >= 60 else f"{duracion_total}m"
+    col4.metric("⚠ Traslape", f"{len(bloques['traslapes'])} - {duracion_str}")
 else:
     col4.metric("⚠ Traslape", "0")
 
-# Renderizar calendario
+# Calendario
 st.subheader(f"Calendario del ciclo: {instalacion_sel}")
 svg_html = generar_svg_calendario(instalacion_sel, fecha_sel, bloques, disponibles)
 st.write(svg_html, unsafe_allow_html=True)
