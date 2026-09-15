@@ -218,7 +218,7 @@ def generar_svg_calendario(instalacion, fecha, bloques, disponibles):
     svg_lines = []
     svg_lines.append(f'<svg width="100%" viewBox="0 0 {ancho + 100} {altura_total + 150}" xmlns="http://www.w3.org/2000/svg">')
     svg_lines.append(f'<style>')
-    svg_lines.append(f'.time-label {{ font-size: 11px; fill: var(--text-secondary); text-anchor: end; }}')
+    svg_lines.append(f'.time-label {{ font-size: 11px; fill: #666; text-anchor: end; }}')
     svg_lines.append(f'.bloque-text {{ font-size: 10px; }}')
     svg_lines.append(f'.bloque-sub {{ font-size: 8px; }}')
     svg_lines.append(f'a {{ cursor: pointer; }}')
@@ -234,34 +234,34 @@ def generar_svg_calendario(instalacion, fecha, bloques, disponibles):
         minutos_desde_inicio = (hora * 60) - inicio_dia
         y_pos = y_base + (minutos_desde_inicio / 60) * 25
         svg_lines.append(f'<text x="35" y="{y_pos + 4}" class="time-label">{hora:02d}:00</text>')
-        svg_lines.append(f'<line x1="40" y1="{y_pos}" x2="{ancho + 40}" y2="{y_pos}" stroke="var(--border)" stroke-width="0.5"/>')
+        svg_lines.append(f'<line x1="40" y1="{y_pos}" x2="{ancho + 40}" y2="{y_pos}" stroke="#ddd" stroke-width="0.5"/>')
     
     # Línea final
     y_fin = y_base + altura_total
-    svg_lines.append(f'<line x1="40" y1="{y_fin}" x2="{ancho + 40}" y2="{y_fin}" stroke="var(--border)" stroke-width="1"/>')
+    svg_lines.append(f'<line x1="40" y1="{y_fin}" x2="{ancho + 40}" y2="{y_fin}" stroke="#999" stroke-width="1"/>')
     
     # Dibujar clases
     for c_inicio, c_fin, curso in bloques['clases']:
         y_inicio = y_base + ((c_inicio - inicio_dia) / 60) * 25
         altura = ((c_fin - c_inicio) / 60) * 25
-        svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="var(--bg-danger)" stroke="var(--border-danger)" stroke-width="1" rx="4"/>')
-        svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: var(--text-danger); font-weight: bold;">🔴 {curso[:30]}</text>')
-        svg_lines.append(f'<text x="60" y="{y_inicio + altura - 4}" class="bloque-sub" style="fill: var(--text-danger);">{minutos_a_tiempo(c_inicio)}–{minutos_a_tiempo(c_fin)}</text>')
+        svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="#ef5350" stroke="#c62828" stroke-width="1" rx="4"/>')
+        svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: #c62828; font-weight: bold;">🔴 {curso[:30]}</text>')
+        svg_lines.append(f'<text x="60" y="{y_inicio + altura - 4}" class="bloque-sub" style="fill: #c62828;">{minutos_a_tiempo(c_inicio)}–{minutos_a_tiempo(c_fin)}</text>')
     
     # Dibujar reservas
     for r_inicio, r_fin, responsable, motivo in bloques['reservas']:
         y_inicio = y_base + ((r_inicio - inicio_dia) / 60) * 25
         altura = ((r_fin - r_inicio) / 60) * 25
-        svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="var(--bg-warning)" stroke="var(--border-warning)" stroke-width="1" rx="4"/>')
-        svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: var(--text-warning); font-weight: bold;">🟡 {responsable[:30]}</text>')
-        svg_lines.append(f'<text x="60" y="{y_inicio + altura - 4}" class="bloque-sub" style="fill: var(--text-warning);">{minutos_a_tiempo(r_inicio)}–{minutos_a_tiempo(r_fin)} ({motivo[:20]})</text>')
+        svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="#fdd835" stroke="#f57f17" stroke-width="1" rx="4"/>')
+        svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: #f57f17; font-weight: bold;">🟡 {responsable[:30]}</text>')
+        svg_lines.append(f'<text x="60" y="{y_inicio + altura - 4}" class="bloque-sub" style="fill: #f57f17;">{minutos_a_tiempo(r_inicio)}–{minutos_a_tiempo(r_fin)} ({motivo[:20]})</text>')
     
     # Dibujar traslapes (OPCIÓN C: borde grueso rojo + fondo claro)
     for t_inicio, t_fin, _ in bloques['traslapes']:
         y_inicio = y_base + ((t_inicio - inicio_dia) / 60) * 25
         altura = ((t_fin - t_inicio) / 60) * 25
-        svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="#ffcccc" stroke="var(--border-danger)" stroke-width="3" rx="4"/>')
-        svg_lines.append(f'<text x="60" y="{y_inicio + altura/2}" class="bloque-text" style="fill: var(--text-danger); font-weight: bold;">⚠ TRASLAPE</text>')
+        svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="#ffcccc" stroke="#c62828" stroke-width="3" rx="4"/>')
+        svg_lines.append(f'<text x="60" y="{y_inicio + altura/2}" class="bloque-text" style="fill: #c62828; font-weight: bold;">⚠ TRASLAPE</text>')
     
     # Dibujar disponibles
     for disp_inicio, disp_fin in disponibles:
@@ -270,8 +270,8 @@ def generar_svg_calendario(instalacion, fecha, bloques, disponibles):
         duracion_min = disp_fin - disp_inicio
         duracion_str = f"{duracion_min // 60}h {duracion_min % 60}m" if duracion_min >= 60 else f"{duracion_min}m"
         
-        svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="var(--bg-success)" stroke="var(--border-success)" stroke-width="2" rx="4"/>')
-        svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: var(--text-success); font-weight: bold;">✅ Disponible ({duracion_str})</text>')
+        svg_lines.append(f'<rect x="50" y="{y_inicio}" width="{ancho - 20}" height="{altura}" fill="#4caf50" stroke="#2e7d32" stroke-width="2" rx="4"/>')
+        svg_lines.append(f'<text x="60" y="{y_inicio + 14}" class="bloque-text" style="fill: #2e7d32; font-weight: bold;">✅ Disponible ({duracion_str})</text>')
     
     svg_lines.append(f'</svg>')
     return "\n".join(svg_lines)
