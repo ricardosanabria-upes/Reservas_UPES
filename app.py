@@ -299,6 +299,11 @@ instalaciones = sorted(set(instalaciones) | ESPACIOS_ADICIONALES)
 
 # Sidebar: Filtros
 st.sidebar.title("Filtros")
+
+# Selector de fecha
+fecha_sel = st.sidebar.date_input("Seleccionar fecha", datetime.now())
+
+# Selector de instalación
 instalacion_sel = st.sidebar.selectbox("Seleccionar instalación", instalaciones, index=0)
 
 # Obtener bloques (sin fecha, solo del horario del ciclo)
@@ -329,6 +334,5 @@ else:
 
 # Renderizar calendario
 st.subheader(f"Calendario del ciclo: {instalacion_sel}")
-fecha_hoy = datetime.now()
-svg_html = generar_svg_calendario(instalacion_sel, fecha_hoy, bloques, disponibles)
+svg_html = generar_svg_calendario(instalacion_sel, fecha_sel, bloques, disponibles)
 st.write(svg_html, unsafe_allow_html=True)
