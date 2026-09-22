@@ -3,10 +3,18 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import io
+import os
 
-# URLs (reemplaza con las tuyas)
-GITHUB_EXCEL_URL = "https://raw.githubusercontent.com/ricardosanabria-upes/Consulta_Disponibilidad_UPES/main/DETALLE%20AULAS%20CICLO%20ACTUAL.xlsx"
-SHEETS_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/export?format=csv&gid=0"
+# URLs - intenta secrets primero, luego variables de entorno
+try:
+    GITHUB_EXCEL_URL = st.secrets["github_excel_url"]
+except Exception:
+    GITHUB_EXCEL_URL = os.environ.get("GITHUB_EXCEL_URL", "https://raw.githubusercontent.com/ricardosanabria-upes/Consulta_Disponibilidad_UPES/main/DETALLE%20AULAS%20CICLO%20ACTUAL.xlsx")
+
+try:
+    SHEETS_URL = st.secrets["sheets_url"]
+except Exception:
+    SHEETS_URL = os.environ.get("SHEETS_URL", "")
 
 @st.cache_data(ttl=300)
 def cargar_horario():
@@ -14,6 +22,7 @@ def cargar_horario():
         response = requests.get(GITHUB_EXCEL_URL)
         response.raise_for_status()
         df = pd.read_excel(io.BytesIO(response.content))
+        df.columns = df.columns.str.strip()
         return df
     except Exception as e:
         st.error(f"Error cargando horario: {e}")
@@ -21,8 +30,11 @@ def cargar_horario():
 
 @st.cache_data(ttl=300)
 def cargar_reservas():
+    if not SHEETS_URL:
+        return None
     try:
         df = pd.read_csv(SHEETS_URL, header=1)
+        df.columns = df.columns.str.strip()
         return df
     except Exception as e:
         st.error(f"Error cargando reservas: {e}")
@@ -144,12 +156,22 @@ def main():
     with st.sidebar:
         st.header("⚙️ Configuración")
 
+        # Estado de conexión
         if df_horario is not None:
-            aulas = [col for col in df_horario.columns if col not in ["Dia", "Hora"]]
-            aula_seleccionada = st.selectbox("Selecciona un aula:", aulas)
+            st.success("✅ Horario cargado desde GitHub")
         else:
-            st.error("No se pudo cargar la lista de aulas")
+            st.error("❌ Error al cargar horario")
             return
+
+        if df_reservas is not None:
+            st.success("✅ Reservas cargadas desde Google Sheets")
+        else:
+            st.warning("⚠️ No se pudieron cargar reservas")
+
+        st.divider()
+
+        aulas = sorted([col for col in df_horario.columns if col not in ["Dia", "Hora"]])
+        aula_seleccionada = st.selectbox("Selecciona un aula:", aulas)
 
         fecha_seleccionada = st.date_input("Selecciona una fecha:", datetime.now())
 
