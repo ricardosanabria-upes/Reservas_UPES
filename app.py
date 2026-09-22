@@ -40,11 +40,31 @@ def cargar_reservas():
         st.error(f"Error cargando reservas: {e}")
         return None
 
+def normalizar_dia(dia_str):
+    """Convierte '1.Lunes' -> 'LUNES'"""
+    dia_str = str(dia_str).strip()
+    # Si tiene el formato "N.Dia", extrae la parte después del punto
+    if "." in dia_str:
+        dia_str = dia_str.split(".", 1)[1]
+    # Mapea nombres en español a nombres en mayúsculas
+    dias_map = {
+        "lunes": "LUNES",
+        "martes": "MARTES",
+        "miércoles": "MIÉRCOLES",
+        "miercoles": "MIÉRCOLES",
+        "jueves": "JUEVES",
+        "viernes": "VIERNES",
+        "sábado": "SÁBADO",
+        "sabado": "SÁBADO",
+        "domingo": "DOMINGO",
+    }
+    return dias_map.get(dia_str.lower(), dia_str.upper())
+
 def obtener_bloques_dia(df_horario, df_reservas, aula, fecha):
     fecha_str = fecha.strftime("%d/%m/%Y")
     dia_nombre = fecha.strftime("%A").upper()
 
-    # Traducir nombres de días
+    # Traducir nombres de días de Python
     dias_es = {
         "MONDAY": "LUNES",
         "TUESDAY": "MARTES",
@@ -54,18 +74,20 @@ def obtener_bloques_dia(df_horario, df_reservas, aula, fecha):
         "SATURDAY": "SÁBADO",
         "SUNDAY": "DOMINGO"
     }
-    dia_nombre = dias_es.get(dia_nombre, dia_nombre)
+    dia_nombre_es = dias_es.get(dia_nombre, dia_nombre)
 
     clases = []
     if df_horario is not None:
-        df_dia = df_horario[df_horario["Dia"] == dia_nombre]
-        if not df_dia.empty and aula in df_horario.columns:
-            for idx, row in df_dia.iterrows():
-                if pd.notna(row[aula]) and str(row[aula]).strip() != "":
+        # Buscar filas que coincidan con el día (después de normalizar)
+        for idx, row in df_horario.iterrows():
+            dia_normalizado = normalizar_dia(row["Dia"])
+            if dia_normalizado == dia_nombre_es and aula in df_horario.columns:
+                valor = row[aula]
+                if pd.notna(valor) and str(valor).strip() != "" and str(valor).strip() != "None":
                     clases.append({
                         "type": "clase",
                         "hora": row["Hora"],
-                        "contenido": str(row[aula])
+                        "contenido": str(valor)
                     })
 
     reservas = []
@@ -87,48 +109,59 @@ def obtener_bloques_dia(df_horario, df_reservas, aula, fecha):
     return clases + reservas
 
 def generar_svg_calendario(bloques, aula, fecha):
-    HORAS = [f"{h:02d}:00" for h in range(7, 20)]
-    ANCHO = 600
-    ALTO_FILA = 40
-    MARGIN_LEFT = 80
-    MARGIN_TOP = 60
+    HORAS = [f"{h:02d}:00" for h in range(6, 21)]
+    ANCHO = 700
+    ALTO_FILA = 50
+    MARGIN_LEFT = 100
+    MARGIN_TOP = 80
 
     # Colores
     COLOR_CLASE = "#FF6B6B"
     COLOR_RESERVA = "#FFD93D"
 
     svg_content = f"""
-    <svg width="{ANCHO + 100}" height="{len(HORAS) * ALTO_FILA + MARGIN_TOP + 40}" xmlns="http://www.w3.org/2000/svg">
+    <svg width="{ANCHO + 120}" height="{len(HORAS) * ALTO_FILA + MARGIN_TOP + 40}" xmlns="http://www.w3.org/2000/svg">
         <style>
-            .hora-label {{ font-size: 12px; font-weight: bold; }}
-            .bloque-text {{ font-size: 11px; font-weight: bold; fill: #000; text-anchor: start; }}
-            .titulo {{ font-size: 14px; font-weight: bold; }}
-            .linea-hora {{ stroke: #e0e0e0; stroke-width: 1; }}
+            .hora-label {{ font-size: 12px; font-weight: bold; color: #333; }}
+            .bloque-text {{ font-size: 12px; font-weight: 500; fill: #000; text-anchor: start; }}
+            .titulo {{ font-size: 16px; font-weight: bold; color: #1e1b4b; }}
+            .linea-hora {{ stroke: #e5e7eb; stroke-width: 1; }}
+            rect {{ filter: drop-shadow(0 1px 3px rgba(0,0,0,0.1)); }}
         </style>
 
-        <!-- Título -->
-        <text x="10" y="30" class="titulo">{aula} - {fecha.strftime('%d/%m/%Y')}</text>
-
-        <!-- Horas y líneas de cuadrícula -->
+        <!-- Fondo alterno -->
     """
 
     for i, hora in enumerate(HORAS):
+        if i % 2 == 0:
+            y = MARGIN_TOP + i * ALTO_FILA
+            svg_content += f'<rect x="0" y="{y}" width="{ANCHO + MARGIN_LEFT + 20}" height="{ALTO_FILA}" fill="#f9fafb"/>\n'
+
+    # Título
+    svg_content += f'<text x="10" y="35" class="titulo">{aula} - {fecha.strftime("%d/%m/%Y")}</text>\n'
+
+    # Horas y líneas de cuadrícula
+    for i, hora in enumerate(HORAS):
         y = MARGIN_TOP + i * ALTO_FILA
-        svg_content += f'<text x="10" y="{y + 25}" class="hora-label">{hora}</text>\n'
+        svg_content += f'<text x="10" y="{y + 35}" class="hora-label">{hora}</text>\n'
         svg_content += f'<line x1="{MARGIN_LEFT}" y1="{y}" x2="{ANCHO + MARGIN_LEFT}" y2="{y}" class="linea-hora"/>\n'
 
     # Renderizar bloques (clases y reservas)
     for bloque in bloques:
         hora_str = str(bloque["hora"]).strip()
         try:
-            if ":" in hora_str:
-                hora_parts = hora_str.split(":")
-                hora_idx = int(hora_parts[0]) - 7
+            # Extrae la hora inicial del rango (ej: "06:00-07:40" -> "06:00")
+            if "-" in hora_str:
+                hora_inicio = hora_str.split("-")[0].strip()
             else:
-                hora_idx = int(hora_str) - 7
+                hora_inicio = hora_str
+
+            # Convierte "06:00" a índice (6-6=0, 7-6=1, etc.)
+            hora_parts = hora_inicio.split(":")
+            hora_idx = int(hora_parts[0]) - 6
 
             if 0 <= hora_idx < len(HORAS):
-                y = MARGIN_TOP + hora_idx * ALTO_FILA + 5
+                y = MARGIN_TOP + hora_idx * ALTO_FILA + 8
 
                 if bloque["type"] == "clase":
                     color = COLOR_CLASE
@@ -137,9 +170,9 @@ def generar_svg_calendario(bloques, aula, fecha):
                     color = COLOR_RESERVA
                     emoji = "🟡"
 
-                svg_content += f'<rect x="{MARGIN_LEFT}" y="{y}" width="450" height="30" fill="{color}" rx="3"/>\n'
-                svg_content += f'<text x="{MARGIN_LEFT + 10}" y="{y + 20}" class="bloque-text">{emoji} {bloque["contenido"]}</text>\n'
-        except:
+                svg_content += f'<rect x="{MARGIN_LEFT}" y="{y}" width="550" height="38" fill="{color}" rx="4" opacity="0.85"/>\n'
+                svg_content += f'<text x="{MARGIN_LEFT + 12}" y="{y + 24}" class="bloque-text">{emoji} {bloque["contenido"][:60]}</text>\n'
+        except Exception as e:
             pass
 
     svg_content += "</svg>"
@@ -152,23 +185,6 @@ def main():
     # Cargar datos
     df_horario = cargar_horario()
     df_reservas = cargar_reservas()
-
-    # DEBUG
-    with st.expander("🔧 DEBUG - Información de carga"):
-        if df_horario is not None:
-            st.write("✅ Horario cargado")
-            st.write("Columnas:", df_horario.columns.tolist())
-            st.write("Días únicos:", df_horario["Dia"].unique().tolist() if "Dia" in df_horario.columns else "N/A")
-            st.dataframe(df_horario.head(10))
-        else:
-            st.write("❌ No se cargó horario")
-
-        if df_reservas is not None:
-            st.write("✅ Reservas cargadas")
-            st.write("Columnas:", df_reservas.columns.tolist())
-            st.dataframe(df_reservas.head(5))
-        else:
-            st.write("⚠️ No se cargaron reservas")
 
     with st.sidebar:
         st.header("⚙️ Configuración")
@@ -183,7 +199,7 @@ def main():
         if df_reservas is not None:
             st.success("✅ Reservas cargadas desde Google Sheets")
         else:
-            st.warning("⚠️ No se pudieron cargar reservas")
+            st.warning("⚠️ Reservas no configuradas")
 
         st.divider()
 
@@ -206,7 +222,7 @@ def main():
     # Calcular métricas
     clases = [b for b in bloques if b["type"] == "clase"]
     reservas_list = [b for b in bloques if b["type"] == "reserva"]
-    horas_totales = 13  # 7:00 a 19:00
+    horas_totales = 15  # 6:00 a 21:00
     horas_libres = horas_totales - len(clases) - len(reservas_list)
 
     # Mostrar métricas
@@ -218,7 +234,8 @@ def main():
     with col3:
         st.metric("Reservas", len(reservas_list))
     with col4:
-        st.metric("Ocupación", f"{round((len(clases) + len(reservas_list)) / horas_totales * 100)}%")
+        ocupacion = round((len(clases) + len(reservas_list)) / horas_totales * 100) if horas_totales > 0 else 0
+        st.metric("Ocupación", f"{ocupacion}%")
 
     st.divider()
 
