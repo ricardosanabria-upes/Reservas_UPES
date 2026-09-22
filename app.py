@@ -4,9 +4,9 @@ import requests
 from datetime import datetime, timedelta
 import io
 
-# Configuración
-GITHUB_EXCEL_URL = st.secrets["github_excel_url"]
-SHEETS_URL = st.secrets["sheets_url"]
+# URLs (reemplaza con las tuyas)
+GITHUB_EXCEL_URL = "https://raw.githubusercontent.com/ricardosanabria-upes/Consulta_Disponibilidad_UPES/main/DETALLE%20AULAS%20CICLO%20ACTUAL.xlsx"
+SHEETS_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/export?format=csv&gid=0"
 
 @st.cache_data(ttl=300)
 def cargar_horario():
