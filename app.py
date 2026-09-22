@@ -153,6 +153,23 @@ def main():
     df_horario = cargar_horario()
     df_reservas = cargar_reservas()
 
+    # DEBUG
+    with st.expander("🔧 DEBUG - Información de carga"):
+        if df_horario is not None:
+            st.write("✅ Horario cargado")
+            st.write("Columnas:", df_horario.columns.tolist())
+            st.write("Días únicos:", df_horario["Dia"].unique().tolist() if "Dia" in df_horario.columns else "N/A")
+            st.dataframe(df_horario.head(10))
+        else:
+            st.write("❌ No se cargó horario")
+
+        if df_reservas is not None:
+            st.write("✅ Reservas cargadas")
+            st.write("Columnas:", df_reservas.columns.tolist())
+            st.dataframe(df_reservas.head(5))
+        else:
+            st.write("⚠️ No se cargaron reservas")
+
     with st.sidebar:
         st.header("⚙️ Configuración")
 
@@ -170,8 +187,12 @@ def main():
 
         st.divider()
 
-        aulas = sorted([col for col in df_horario.columns if col not in ["Dia", "Hora"]])
-        aula_seleccionada = st.selectbox("Selecciona un aula:", aulas)
+        if df_horario is not None:
+            aulas = sorted([col for col in df_horario.columns if col not in ["Dia", "Hora"]])
+            aula_seleccionada = st.selectbox("Selecciona un aula:", aulas)
+        else:
+            st.error("No hay aulas disponibles")
+            return
 
         fecha_seleccionada = st.date_input("Selecciona una fecha:", datetime.now())
 
@@ -224,6 +245,8 @@ def main():
             st.write("**Reservas:**")
             for reserva in reservas_list:
                 st.text(f"  {reserva['hora']} - {reserva['contenido']}")
+    else:
+        st.info("No hay clases ni reservas para esta fecha y aula")
 
 if __name__ == "__main__":
     main()
