@@ -78,7 +78,7 @@ def cargar_reservas():
             elif "nombre completo del solicitante" in cl:
                 rename[col] = "nombre"
             elif "nombre y descripción" in cl or "nombre y descripcion" in cl or "actividad" in cl:
-    rename[col] = "actividad"
+                    rename[col] = "actividad"
         
         df = df.rename(columns=rename)
         
